@@ -2,85 +2,26 @@ document.addEventListener("DOMContentLoaded", () => {
     const roomsList = document.getElementById("roomsList");
     const createForm = document.getElementById("createRoomForm");
 
-    // === دوال مساعدة ===
-    // دالة لعرض رسائل تنبيه مخصصة بدلاً من alert() الافتراضي
     function showCustomAlert(message) {
-        // يمكنك هنا بناء واجهة مستخدم (UI) مخصصة لعرض الرسالة
-        // مثل modal أو toast notification
         console.log("Custom Alert:", message);
-        alert(message); // مؤقتاً، لا تزال تستخدم alert() ولكن يجب استبدالها بواجهة أفضل
+        alert(message);
     }
 
-
-    const eventSource = new EventSource('./php/sse.php'); 
-
-    // عند استقبال رسالة عامة (لو السيرفر بيبعت رسائل عامة بدون تحديد نوع)
-    eventSource.onmessage = function(event) {
-        console.log('رسالة SSE عامة:', event.data);
-    };
-
-    // عند استقبال حدث 'friend_requests_updated'
-    eventSource.addEventListener('friend_requests_updated', function(event) {
-        console.log('تحديث طلبات الصداقة:', event.data);
-        try {
-            const data = JSON.parse(event.data);
-            const notifCountLobby = document.getElementById('notifCountLobby');
-            if (notifCountLobby) {
-                notifCountLobby.textContent = data.count;
-                notifCountLobby.style.display = data.count > 0 ? 'inline' : 'none';
-            }
-        } catch (e) {
-            console.error('خطأ في تحليل بيانات تحديث طلبات الصداقة:', e);
-        }
-    });
-
-    // عند استقبال حدث 'rooms_updated'
-    eventSource.addEventListener('rooms_updated', function(event) {
-        console.log('تحديث الغرف:', event.data);
-        // استدعي الدالة التي تقوم بتحميل وتحديث قائمة الغرف
-        // ستقوم loadRooms() بعمل fetch جديد لضمان أحدث البيانات
-        loadRooms(); 
-    });
-
-    // عند استقبال حدث 'chat_message'
-    eventSource.addEventListener('chat_message', function(event) {
-        console.log('رسالة دردشة جديدة:', event.data);
-        // يمكنك هنا إضافة منطق لعرض رسالة الدردشة الجديدة
-        // مثال: appendChatMessage(JSON.parse(event.data));
-    });
-
-    // عند استقبال حدث 'ping' (للحفاظ على الاتصال)
-    eventSource.addEventListener('ping', function(event) {
-        console.log('SSE Ping:', event.data);
-    });
-
-    // في حالة حدوث خطأ في اتصال SSE
-    eventSource.onerror = function(err) {
-        console.error('EventSource failed:', err);
-        eventSource.close(); // إغلاق الاتصال الحالي
-        // يمكنك هنا إضافة منطق لإعادة المحاولة بعد فترة (Exponential backoff)
-    };
-
-    // === وظائف تحميل الغرف والانضمام ===
+    // === تحميل الغرف كل 3 ثواني ===
     function loadRooms() {
         roomsList.innerHTML = "⏳ جاري تحميل الغرف...";
 
-        fetch('php/get_rooms.php')
+        fetch('php/fetch_rooms.php') // استعملنا الملف الجديد بدل get_rooms.php
             .then(res => {
-                // تحقق من حالة الاستجابة HTTP
-                if (!res.ok) {
-                    throw new Error(`HTTP Error: ${res.status} - ${res.statusText}`);
-                }
-                // استخدم .json() مباشرة لأن الخادم يرسل JSON
+                if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
                 return res.json();
             })
             .then(data => {
-                console.log("Parsed JSON:", data); // للاختبار
                 let html = '';
-                if (data.length === 0) {
+                if (!data.success || data.rooms.length === 0) {
                     html = '❌ لا توجد غرف حالياً';
                 } else {
-                    data.forEach(room => {
+                    data.rooms.forEach(room => {
                         html += `
                         <div class="room">
                             <strong>${room.room_name}</strong> 
@@ -98,7 +39,11 @@ document.addEventListener("DOMContentLoaded", () => {
             });
     }
 
-    // === وظائف إنشاء الغرفة ===
+    // استدعاء أولي + كل 3 ثواني
+    loadRooms();
+    setInterval(loadRooms, 3000);
+
+    // === إنشاء غرفة ===
     createForm.addEventListener("submit", e => {
         e.preventDefault();
         const formData = new FormData();
@@ -113,16 +58,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     let roomId = data.split(":")[1];
                     window.location.href = "room.php?room_id=" + roomId;
                 } else {
-                    showCustomAlert(data); // استخدام الدالة المخصصة
+                    showCustomAlert(data);
                 }
             })
             .catch(error => {
                 console.error("خطأ في إنشاء الغرفة:", error);
-                showCustomAlert("⚠ حدث خطأ في الاتصال بالسيرفر عند إنشاء الغرفة."); // استخدام الدالة المخصصة
+                showCustomAlert("⚠ حدث خطأ في الاتصال بالسيرفر عند إنشاء الغرفة.");
             });
     });
 
-    // === وظائف الانضمام إلى الغرفة ===
+    // === الانضمام إلى غرفة ===
     window.joinRoom = function (roomId) {
         const formData = new FormData();
         formData.append("room_id", roomId);
@@ -136,16 +81,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     let page = parts[2];
                     window.location.href = page + ".php?room_id=" + roomId;
                 } else {
-                    showCustomAlert(msg); // استخدام الدالة المخصصة
+                    showCustomAlert(msg);
                 }
             })
             .catch(error => {
                 console.error("خطأ في الانضمام للغرفة:", error);
-                showCustomAlert("⚠ حدث خطأ في الاتصال بالسيرفر عند الانضمام للغرفة."); // استخدام الدالة المخصصة
+                showCustomAlert("⚠ حدث خطأ في الاتصال بالسيرفر عند الانضمام للغرفة.");
             });
     };
 
-    // === وظائف بدء اللعبة ===
+    // === بدء اللعبة ===
     window.startGame = function (roomId) {
         const formData = new FormData();
         formData.append("room_id", roomId);
@@ -156,16 +101,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.success) {
                     window.location.href = data.redirect;
                 } else {
-                    showCustomAlert(data.message || "❌ حدث خطأ في بدء اللعبة"); // استخدام الدالة المخصصة
+                    showCustomAlert(data.message || "❌ حدث خطأ في بدء اللعبة");
                 }
             })
             .catch(error => {
                 console.error("خطأ في بدء اللعبة:", error);
-                showCustomAlert("⚠ حدث خطأ في الاتصال بالسيرفر عند بدء اللعبة."); // استخدام الدالة المخصصة
+                showCustomAlert("⚠ حدث خطأ في الاتصال بالسيرفر عند بدء اللعبة.");
             });
     };
 
-    // === وظائف Custom Select (تم نقلها كما هي) ===
+    // === باقي كود custom select زي ما هو ===
     const selectWrapper = document.querySelector('.custom-select-wrapper');
     const trigger = selectWrapper.querySelector('.custom-select-trigger');
     const options = selectWrapper.querySelectorAll('.custom-option');
@@ -205,18 +150,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // === تحديث القائمة عند تحميل الصفحة فقط ===
-    // استدعيها مرة واحدة لتحميل الغرف عند دخول اللوبي
-
-    // استدعاء loadFriends (تفترض أنها معرفة في friend_requests_notif.js أو مكان آخر)
-    // إذا كنت تحتاج لتحميل الأصدقاء مبدئياً، تأكد من تعريف هذه الدالة.
-    // loadFriends(); 
-
-    // إرسال إشعار عند الخروج لتسجيل الخروج من الغرفة
+    // إشعار عند الخروج
     window.addEventListener("beforeunload", () => {
         navigator.sendBeacon("php/leave_room.php");
     });
 });
-
-// هذا السطر يمكن إزالته إذا لم يكن هناك استخدام آخر لـ window.loadRooms خارج هذا الملف.
-// window.loadRooms = (typeof loadRooms !== 'undefined') ? loadRooms : window.loadRooms;
